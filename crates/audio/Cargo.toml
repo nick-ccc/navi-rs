@@ -1,0 +1,9 @@
+[package]
+name = "audio"
+version = "0.1.0"      # concrete version
+edition = "2024"        # concrete edition
+
+[dependencies]
+hound = "3.5"
+anyhow = "1"
+tracing = "0.1"

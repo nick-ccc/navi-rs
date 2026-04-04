@@ -1,9 +1,9 @@
-<h1 align="center">RUST-NIX Teamplate Project</h1>
+<h1 align="center">NAVI STT in Rust</h1>
 <p align="center">
-  <a href="https://rustacean.net/">
+  <a href="https://zelda.fandom.com/wiki/Navi">
     <img 
-        src="https://rustacean.net/assets/cuddlyferris.svg"  
-        alt="Ferris" 
+        src="https://static.wikia.nocookie.net/zelda_gamepedia_en/images/0/08/OoT3D_Navi_Artwork.png/revision/latest?cb=20110729222747"  
+        alt="Navi" 
         width="400" 
     />
   </a>
@@ -19,11 +19,4 @@
   </a>
   
 </p>
-
-
-# Provides
-- Basic CI for testing (github actions)
-- prehook for running formatting and linting
-- Nix Flake for simple rust installation and useful packages
-- Makefile for running common cargo commands
 

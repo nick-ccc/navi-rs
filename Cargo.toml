@@ -1,6 +1,20 @@
-[package]
-name = "rust-nix-template"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+resolver = "2"
 
-[dependencies]
+members = [
+    "crates/audio"
+]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+thiserror = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+futures = "0.3"
