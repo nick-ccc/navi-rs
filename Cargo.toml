@@ -2,7 +2,8 @@
 resolver = "2"
 
 members = [
-    "crates/audio"
+    "crates/audio",
+    "crates/model"
 ]
 
 [workspace.package]
