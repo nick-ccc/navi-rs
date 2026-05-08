@@ -1,3 +1,5 @@
+use core::panic;
+
 use burn::{
     module::Module,
     nn::{
@@ -91,7 +93,32 @@ impl<B: Backend> MultiHeadAttention<B> {
         }
     }
 
-    /// Perfroms the attention calculation for the multiheaded attention block
+    /// Forward pass of multi-head self-attention.
+    ///
+    /// Applies linear projections to input `x` to produce query, key, and value,
+    /// computes scaled dot-product attention, and applies a final output projection.
+    pub fn forward(&self, x: Tensor<B, 3>, xa: Option<Tensor<B, 3>>, mask: Option<Tensor<B, 2>>) -> Tensor<B, 3> {
+        let query = self.query.forward(x.clone()); // [B, T, n_state]
+        
+        // toggles based on attention model
+        let key = if let Some(v) = &xa {
+            self.key.forward(v.clone())
+        } else {
+            self.key.forward(x.clone())
+        };
+        let value = if let Some(v) = &xa {
+            self.value.forward(v.clone())
+        } else {
+            self.value.forward(x.clone())
+        };
+
+        // For now, just returning q as a placeholder
+        let attention = self.qkv_attention(query, key, value, mask);
+
+        self.out.forward(attention)
+    }
+
+     /// Perfroms the attention calculation for the multiheaded attention block
     ///
     /// Based on the formula in Attention is all you need - using scaled dot product attention:
     ///     Attention(Q, K, V) = softmax(QK^T / sqrt(d_k)) * V
@@ -105,7 +132,7 @@ impl<B: Backend> MultiHeadAttention<B> {
     /// * Split into heads → [batch_size, number_of_heads (self.n_head), sequence_length, dimension_per_head]
     /// * Compute QK^T, apply mask, softmax
     /// * Weight values and merge heads → [batch_size, sequence_length, D]
-    fn attention_calculation(
+    fn qkv_attention(
         &self,
         query: Tensor<B, 3>,
         key: Tensor<B, 3>,
@@ -148,21 +175,6 @@ impl<B: Backend> MultiHeadAttention<B> {
         // Return output softmax(Q*K^T) * V
         weight.matmul(value).permute([0, 2, 1, 3]).flatten(2, 3)
     }
-
-    /// Forward pass of multi-head self-attention.
-    ///
-    /// Applies linear projections to input `x` to produce query, key, and value,
-    /// computes scaled dot-product attention, and applies a final output projection.
-    pub fn forward(&self, x: Tensor<B, 3>, mask: Option<Tensor<B, 2>>) -> Tensor<B, 3> {
-        let query = self.query.forward(x.clone()); // [B, T, n_state]
-        let key = self.key.forward(x.clone());
-        let value = self.value.forward(x);
-
-        // For now, just returning q as a placeholder
-        let attention = self.attention_calculation(query, key, value, mask);
-
-        self.out.forward(attention)
-    }
 }
 
 #[derive(Module, Debug)]
@@ -177,8 +189,6 @@ pub struct ResidualAttentionBlock<B: Backend> {
 
 impl<B: Backend> ResidualAttentionBlock<B> {
     /// Creates new ResidualAttentionBlock
-    ///
-    /// TODO
     pub fn new(n_state: usize, n_head: usize, cross_attention: bool, device: &B::Device) -> Self {
         let attention_layer = MultiHeadAttention::new(n_state, n_head, device);
         let attention_layer_normalization = LayerNormConfig::new(n_state).init(device);
@@ -212,14 +222,14 @@ impl<B: Backend> ResidualAttentionBlock<B> {
     pub fn forward(
         &self,
         x: Tensor<B, 3>,
-        xa: Tensor<B, 3>,
+        xa: Option<Tensor<B, 3>>,
         mask: Option<Tensor<B, 2>>,
     ) -> Tensor<B, 3> {
         // Apply first linear layer
         let x = x.clone()
             + self
                 .attention_layer
-                .forward(self.attention_layer_normalization.forward(x), mask.clone());
+                .forward(self.attention_layer_normalization.forward(x), xa.clone(), mask.clone());
 
         // Apply cross attention if applicable
         let x = if let (Some(cross_attention_layer), Some(cross_attention_layer_normalization)) = (
@@ -228,7 +238,7 @@ impl<B: Backend> ResidualAttentionBlock<B> {
         ) {
             x.clone()
                 + cross_attention_layer
-                    .forward(cross_attention_layer_normalization.forward(x), mask.clone())
+                    .forward(cross_attention_layer_normalization.forward(x), xa.clone(), mask.clone())
         } else {
             x
         };
@@ -276,7 +286,7 @@ pub struct AudioEncoder<B: Backend> {
     pub gelu1: Gelu,
     pub conv2: Conv1d<B>,
     pub gelu2: Gelu,
-    pub positional_embedding: Tensor<B, 2>, // [n_ctx, n_state]
+    pub positional_embedding: Tensor<B, 2>,
     pub blocks: Vec<ResidualAttentionBlock<B>>,
     pub layer_normalization_post: LayerNorm<B>,
 }
@@ -326,8 +336,32 @@ impl<B: Backend> AudioEncoder<B> {
     pub fn forward(
         &self,
         x: Tensor<B, 3>,
-        xa: Tensor<B, 3>,
     ) -> Tensor<B, 3> {
-     let x =    
+        let x = self.gelu1.forward(self.conv1.forward(x));
+        let x = self.gelu2.forward(self.conv1.forward(x));
+        let x = x.permute([0,2,1]);
+
+        if x.dims()[1..] == self.positional_embedding.dims() {
+            panic!("Incorrect audio shape");
+        }
+       
+        let k = x.dims()[1];
+        let x = x + self
+            .positional_embedding
+            .clone()
+            .slice([0..k])
+            .unsqueeze::<3>();
+
+        let mut x = x;
+        for block in &self.blocks {
+            x = block.forward(x, None, None);
+        }
+       
+        self.layer_normalization_post.forward(x)
     }
 }
+
+
+
+
+
