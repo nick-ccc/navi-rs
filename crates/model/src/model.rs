@@ -1,12 +1,11 @@
-use core::panic;
+use core::{f32, panic};
 
 use burn::{
-    module::Module,
+    module::{Module, Param},
     nn::{
-        Gelu, LayerNorm, LayerNormConfig, Linear, LinearConfig, PaddingConfig1d,
-        conv::{Conv1d, Conv1dConfig},
+        Embedding, EmbeddingConfig, Gelu, LayerNorm, LayerNormConfig, Linear, LinearConfig, PaddingConfig1d, conv::{Conv1d, Conv1dConfig}
     },
-    tensor::{Tensor, activation::softmax, backend::Backend},
+    tensor::{Distribution, Tensor, activation::softmax, backend::Backend},
 };
 
 #[derive(Debug, Clone)]
@@ -359,5 +358,85 @@ impl<B: Backend> AudioEncoder<B> {
        
         self.layer_normalization_post.forward(x)
     }
+}
+
+
+#[derive(Module, Debug)]
+pub struct TextDecoder<B: Backend> {
+    pub token_embedding: Embedding<B>,
+    pub positional_encoding: Param<Tensor<B, 2>>,
+    pub blocks: Vec<ResidualAttentionBlock<B>>,
+    pub layer_normalization_post: LayerNorm<B>,
+    pub mask: Tensor<B, 2>,
+}
+
+impl<B: Backend> TextDecoder<B> {
+    pub fn new(
+        n_vocab: usize,
+        n_text_ctx: usize,
+        n_text_state: usize,
+        n_text_head: usize,
+        n_text_layer:usize,
+        device: &B::Device,
+    ) -> Self {
+
+        let embedding_config = EmbeddingConfig::new(n_vocab, n_text_state);
+        let token_embedding = embedding_config.init(device);
+
+        
+        let positional_encoding = Param::from_tensor(Tensor::<B,2>::random(
+            [n_text_ctx, n_text_state], Distribution::Default, device)
+        );
+        
+        let blocks: Vec<ResidualAttentionBlock<B>> = (0..n_text_layer)
+            .map(|_| {
+                    ResidualAttentionBlock::new(n_text_state, n_text_head, true, device)
+                }
+            ).collect();
+
+        let layer_normalization_post = LayerNormConfig::new(n_text_state).init(device);
+        let mask = Tensor::<B, 2>::full([n_text_ctx, n_text_ctx], f32::NEG_INFINITY, device).triu(1);
+
+        Self{
+            token_embedding,
+            positional_encoding,
+            blocks,
+            layer_normalization_post,
+            mask,
+        }
+    }
+
+    // Forward pass on text decoder
+    //
+    // Parameters:
+    //  *  x: Tesnor<B,2>: 2D tesnor of shape (batch_size, <= n_ctx)
+    //  * xa: Tesnor<B,3>: 3D tesnor of shape (batch_size, n_audio_ctx, n_audio_state)
+    //                      of the audio features to be attended on
+    pub fn forward(
+        &self,
+        x: Tensor<B, 2>,
+        xa: Tensor<B, 3>,
+    ) -> Tensor<B, 3> {
+        let [_, seq_len] = x.dims();
+
+        // could chcek seq_len is valid here
+
+        // Why turn into int..
+        let x = self.token_embedding.forward(x.int()) + 
+            self.positional_encoding
+                .val()
+                .slice([0..seq_len])
+                .unsqueeze::<3>();
+
+        let mut x = x;
+        for block in &self.blocks {
+            x = block.forward(x, Some(xa.clone()), Some(self.mask.clone()))
+        } 
+
+        let x = self.layer_normalization_post.forward(x);
+        
+        // retrun logits
+        x.matmul(self.token_embedding.weight.val().transpose().unsqueeze::<3>())
+    } 
 }
 
