@@ -3,23 +3,25 @@ use core::{f32, panic};
 use burn::{
     module::{Module, Param},
     nn::{
-        Embedding, EmbeddingConfig, Gelu, LayerNorm, LayerNormConfig, Linear, LinearConfig, PaddingConfig1d, conv::{Conv1d, Conv1dConfig}
+        Embedding, EmbeddingConfig, Gelu, LayerNorm, LayerNormConfig, Linear, LinearConfig,
+        PaddingConfig1d,
+        conv::{Conv1d, Conv1dConfig},
     },
-    tensor::{Distribution, Tensor, activation::softmax, backend::Backend},
+    tensor::{Distribution, Int, Tensor, activation::softmax, backend::Backend},
 };
 
 #[derive(Debug, Clone)]
 pub struct ModelDimensions {
-    n_mels: u32,
-    n_audio_ctx: u32,
-    n_audio_state: u32,
-    n_audio_head: u32,
-    n_audio_layer: u32,
-    n_vocab: u32,
-    n_text_ctx: u32,
-    n_text_state: u32,
-    n_text_head: u32,
-    n_text_layer: u32,
+    n_mels: usize,
+    n_audio_ctx: usize,
+    n_audio_state: usize,
+    n_audio_head: usize,
+    n_audio_layer: usize,
+    n_vocab: usize,
+    n_text_ctx: usize,
+    n_text_state: usize,
+    n_text_head: usize,
+    n_text_layer: usize,
 }
 
 /// Sinusoidal positional embeddings `[n_audio_ctx, n_audio_state]`.
@@ -96,9 +98,14 @@ impl<B: Backend> MultiHeadAttention<B> {
     ///
     /// Applies linear projections to input `x` to produce query, key, and value,
     /// computes scaled dot-product attention, and applies a final output projection.
-    pub fn forward(&self, x: Tensor<B, 3>, xa: Option<Tensor<B, 3>>, mask: Option<Tensor<B, 2>>) -> Tensor<B, 3> {
+    pub fn forward(
+        &self,
+        x: Tensor<B, 3>,
+        xa: Option<Tensor<B, 3>>,
+        mask: Option<Tensor<B, 2>>,
+    ) -> Tensor<B, 3> {
         let query = self.query.forward(x.clone()); // [B, T, n_state]
-        
+
         // toggles based on attention model
         let key = if let Some(v) = &xa {
             self.key.forward(v.clone())
@@ -117,7 +124,7 @@ impl<B: Backend> MultiHeadAttention<B> {
         self.out.forward(attention)
     }
 
-     /// Perfroms the attention calculation for the multiheaded attention block
+    /// Perfroms the attention calculation for the multiheaded attention block
     ///
     /// Based on the formula in Attention is all you need - using scaled dot product attention:
     ///     Attention(Q, K, V) = softmax(QK^T / sqrt(d_k)) * V
@@ -226,9 +233,11 @@ impl<B: Backend> ResidualAttentionBlock<B> {
     ) -> Tensor<B, 3> {
         // Apply first linear layer
         let x = x.clone()
-            + self
-                .attention_layer
-                .forward(self.attention_layer_normalization.forward(x), xa.clone(), mask.clone());
+            + self.attention_layer.forward(
+                self.attention_layer_normalization.forward(x),
+                xa.clone(),
+                mask.clone(),
+            );
 
         // Apply cross attention if applicable
         let x = if let (Some(cross_attention_layer), Some(cross_attention_layer_normalization)) = (
@@ -236,8 +245,11 @@ impl<B: Backend> ResidualAttentionBlock<B> {
             &self.cross_attention_layer_normalization,
         ) {
             x.clone()
-                + cross_attention_layer
-                    .forward(cross_attention_layer_normalization.forward(x), xa.clone(), mask.clone())
+                + cross_attention_layer.forward(
+                    cross_attention_layer_normalization.forward(x),
+                    xa.clone(),
+                    mask.clone(),
+                )
         } else {
             x
         };
@@ -311,12 +323,11 @@ impl<B: Backend> AudioEncoder<B> {
             .init(device);
         let gelu2 = Gelu::new();
 
-        let positional_embedding = sinusoids_positional_embedding(n_audio_ctx, n_audio_state, device);
+        let positional_embedding =
+            sinusoids_positional_embedding(n_audio_ctx, n_audio_state, device);
 
         let blocks: Vec<ResidualAttentionBlock<B>> = (0..n_audio_layer)
-            .map(|_| {
-                ResidualAttentionBlock::new(n_audio_state, n_audio_head, true, device)
-            })
+            .map(|_| ResidualAttentionBlock::new(n_audio_state, n_audio_head, true, device))
             .collect();
 
         let layer_normalization_post = LayerNormConfig::new(n_audio_state).init(device);
@@ -332,18 +343,15 @@ impl<B: Backend> AudioEncoder<B> {
         }
     }
 
-    pub fn forward(
-        &self,
-        x: Tensor<B, 3>,
-    ) -> Tensor<B, 3> {
+    pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
         let x = self.gelu1.forward(self.conv1.forward(x));
         let x = self.gelu2.forward(self.conv1.forward(x));
-        let x = x.permute([0,2,1]);
+        let x = x.permute([0, 2, 1]);
 
         if x.dims()[1..] == self.positional_embedding.dims() {
             panic!("Incorrect audio shape");
         }
-       
+
         let k = x.dims()[1];
         let x = x + self
             .positional_embedding
@@ -355,11 +363,10 @@ impl<B: Backend> AudioEncoder<B> {
         for block in &self.blocks {
             x = block.forward(x, None, None);
         }
-       
+
         self.layer_normalization_post.forward(x)
     }
 }
-
 
 #[derive(Module, Debug)]
 pub struct TextDecoder<B: Backend> {
@@ -376,28 +383,27 @@ impl<B: Backend> TextDecoder<B> {
         n_text_ctx: usize,
         n_text_state: usize,
         n_text_head: usize,
-        n_text_layer:usize,
+        n_text_layer: usize,
         device: &B::Device,
     ) -> Self {
-
         let embedding_config = EmbeddingConfig::new(n_vocab, n_text_state);
         let token_embedding = embedding_config.init(device);
 
-        
-        let positional_encoding = Param::from_tensor(Tensor::<B,2>::random(
-            [n_text_ctx, n_text_state], Distribution::Default, device)
-        );
-        
+        let positional_encoding = Param::from_tensor(Tensor::<B, 2>::random(
+            [n_text_ctx, n_text_state],
+            Distribution::Default,
+            device,
+        ));
+
         let blocks: Vec<ResidualAttentionBlock<B>> = (0..n_text_layer)
-            .map(|_| {
-                    ResidualAttentionBlock::new(n_text_state, n_text_head, true, device)
-                }
-            ).collect();
+            .map(|_| ResidualAttentionBlock::new(n_text_state, n_text_head, true, device))
+            .collect();
 
         let layer_normalization_post = LayerNormConfig::new(n_text_state).init(device);
-        let mask = Tensor::<B, 2>::full([n_text_ctx, n_text_ctx], f32::NEG_INFINITY, device).triu(1);
+        let mask =
+            Tensor::<B, 2>::full([n_text_ctx, n_text_ctx], f32::NEG_INFINITY, device).triu(1);
 
-        Self{
+        Self {
             token_embedding,
             positional_encoding,
             blocks,
@@ -412,18 +418,15 @@ impl<B: Backend> TextDecoder<B> {
     //  *  x: Tesnor<B,2>: 2D tesnor of shape (batch_size, <= n_ctx)
     //  * xa: Tesnor<B,3>: 3D tesnor of shape (batch_size, n_audio_ctx, n_audio_state)
     //                      of the audio features to be attended on
-    pub fn forward(
-        &self,
-        x: Tensor<B, 2>,
-        xa: Tensor<B, 3>,
-    ) -> Tensor<B, 3> {
+    pub fn forward(&self, x: Tensor<B, 2, Int>, xa: Tensor<B, 3>) -> Tensor<B, 3> {
         let [_, seq_len] = x.dims();
 
         // could chcek seq_len is valid here
 
         // Why turn into int..
-        let x = self.token_embedding.forward(x.int()) + 
-            self.positional_encoding
+        let x = self.token_embedding.forward(x)
+            + self
+                .positional_encoding
                 .val()
                 .slice([0..seq_len])
                 .unsqueeze::<3>();
@@ -431,12 +434,63 @@ impl<B: Backend> TextDecoder<B> {
         let mut x = x;
         for block in &self.blocks {
             x = block.forward(x, Some(xa.clone()), Some(self.mask.clone()))
-        } 
+        }
 
         let x = self.layer_normalization_post.forward(x);
-        
+
         // retrun logits
-        x.matmul(self.token_embedding.weight.val().transpose().unsqueeze::<3>())
-    } 
+        x.matmul(
+            self.token_embedding
+                .weight
+                .val()
+                .transpose()
+                .unsqueeze::<3>(),
+        )
+    }
 }
 
+#[derive(Module, Debug)]
+pub struct Whisper<B: Backend> {
+    encoder: AudioEncoder<B>,
+    decoder: TextDecoder<B>,
+}
+
+impl<B: Backend> Whisper<B> {
+    pub fn new(model_dims: &ModelDimensions, device: &B::Device) -> Self {
+        let encoder = AudioEncoder::new(
+            model_dims.n_mels,
+            model_dims.n_audio_ctx,
+            model_dims.n_audio_state,
+            model_dims.n_audio_head,
+            model_dims.n_audio_layer,
+            device,
+        );
+
+        let decoder = TextDecoder::new(
+            model_dims.n_vocab,
+            model_dims.n_text_ctx,
+            model_dims.n_text_state,
+            model_dims.n_text_head,
+            model_dims.n_text_layer,
+            device,
+        );
+
+        Self { encoder, decoder }
+    }
+
+    pub fn forward(&self, mel: Tensor<B, 3>, tokens: Tensor<B, 2, Int>) -> Tensor<B, 3> {
+        self.forward_decoder(tokens, self.forward_encoder(mel))
+    }
+
+    pub fn forward_encoder(&self, mel: Tensor<B, 3>) -> Tensor<B, 3> {
+        self.encoder.forward(mel)
+    }
+
+    pub fn forward_decoder(
+        &self,
+        tokens: Tensor<B, 2, Int>,
+        encoder_output: Tensor<B, 3>,
+    ) -> Tensor<B, 3> {
+        self.decoder.forward(tokens, encoder_output)
+    }
+}
