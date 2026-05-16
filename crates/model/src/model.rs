@@ -9,7 +9,7 @@ use burn::{
     },
     tensor::{Distribution, Int, Tensor, activation::softmax, backend::Backend},
 };
- 
+
 #[derive(Debug, Clone)]
 pub struct ModelDimensions {
     pub n_mels: usize,
@@ -40,7 +40,6 @@ fn sinusoids_positional_embedding<B: Backend>(
         .float()
         .unsqueeze::<2>()
         .swap_dims(1, 0);
-
 
     // Generate 1 x n_audio_state / 2 size tensor for frequency scaling
     let div_term = Tensor::<B, 1, Int>::arange(0..half as i64, device)
@@ -246,7 +245,6 @@ impl<B: Backend> ResidualAttentionBlock<B> {
             x
         };
 
-
         // Apply last linear layer and return resulting tensor
         let x = self.multilayer_percpetron.forward(x);
         x.clone() + self.multilayer_percpetron.forward(x)
@@ -313,7 +311,6 @@ impl<B: Backend> AudioEncoder<B> {
             .with_padding(PaddingConfig1d::Explicit(1))
             .init(device);
         let gelu2 = Gelu::new();
-    
 
         let positional_embedding =
             sinusoids_positional_embedding(n_audio_ctx, n_audio_state, device);
@@ -349,7 +346,7 @@ impl<B: Backend> AudioEncoder<B> {
         let x = x + self
             .positional_embedding
             .clone()
-            .slice( 0..k)
+            .slice(0..k)
             .unsqueeze::<3>();
 
         let mut x = x;
@@ -479,8 +476,7 @@ impl<B: Backend> Whisper<B> {
         self.encoder.forward(mel)
     }
 
- 
-   pub fn forward_decoder(
+    pub fn forward_decoder(
         &self,
         tokens: Tensor<B, 2, Int>,
         encoder_output: Tensor<B, 3>,
