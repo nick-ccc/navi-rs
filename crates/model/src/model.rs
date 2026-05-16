@@ -12,55 +12,48 @@ use burn::{
 
 #[derive(Debug, Clone)]
 pub struct ModelDimensions {
-    n_mels: usize,
-    n_audio_ctx: usize,
-    n_audio_state: usize,
-    n_audio_head: usize,
-    n_audio_layer: usize,
-    n_vocab: usize,
-    n_text_ctx: usize,
-    n_text_state: usize,
-    n_text_head: usize,
-    n_text_layer: usize,
+    pub n_mels: usize,
+    pub n_audio_ctx: usize,
+    pub n_audio_state: usize,
+    pub n_audio_head: usize,
+    pub n_audio_layer: usize,
+    pub n_vocab: usize,
+    pub n_text_ctx: usize,
+    pub n_text_state: usize,
+    pub n_text_head: usize,
+    pub n_text_layer: usize,
 }
 
-/// Sinusoidal positional embeddings `[n_audio_ctx, n_audio_state]`.
-///
-/// Encodes each position using sine/cosine functions at different
-/// frequencies
-///
-/// Shapes:
-/// - positions: `[T, 1]`
-/// - div_term: `[1, D/2]`
-/// - output: `[T, D]`
-///
-/// Notes:
-/// - `n_audio_state` must be even
-/// - uses broadcasting `[T,1] * [1,D/2]`
 fn sinusoids_positional_embedding<B: Backend>(
     n_audio_ctx: usize,
     n_audio_state: usize,
     device: &B::Device,
 ) -> Tensor<B, 2> {
+    if n_audio_state % 2 != 0 {
+        panic!("audio state length must be divisible by two")
+    }
+
     let half = n_audio_state / 2;
 
-    // Generate n_audio_ctx positional tensor
-    let positions = Tensor::<B, 1, burn::tensor::Int>::arange(0..n_audio_ctx as i64, device)
+    // Generate 1 x n_audio_ctx positional tensor
+    let positions = Tensor::<B, 1, Int>::arange(0..n_audio_ctx as i64, device)
         .float()
-        .unsqueeze::<2>();
+        .unsqueeze::<2>()
+        .swap_dims(1, 0);
 
-    // Generate n_audio_state / 2 size tensor for frequency scaling
-    let div_term = Tensor::<B, 1, burn::tensor::Int>::arange(0..half as i64, device)
+
+    // Generate 1 x n_audio_state / 2 size tensor for frequency scaling
+    let div_term = Tensor::<B, 1, Int>::arange(0..half as i64, device)
         .float()
         .mul_scalar(-(10000.0_f32.ln()) / half as f32)
         .exp()
-        .unsqueeze::<2>()
-        .swap_dims(0, 1);
+        .unsqueeze::<2>();
 
     let sinusoid = positions * div_term;
     let sin = sinusoid.clone().sin();
     let cos = sinusoid.cos();
 
+    // dim: n_audio_state x n_audio_ctx
     Tensor::cat(vec![sin, cos], 1)
 }
 
@@ -152,7 +145,7 @@ impl<B: Backend> MultiHeadAttention<B> {
         let head_dim = n_state / self.n_head;
 
         let query = query
-            .reshape([n_batch, n_ctx, self.n_head, head_dim])
+            .reshape([n_batch, n_qctx, self.n_head, head_dim])
             .permute([0, 2, 1, 3])
             .mul_scalar(scale);
 
@@ -211,9 +204,8 @@ impl<B: Backend> ResidualAttentionBlock<B> {
             None
         };
 
-        let n_mlp = n_state * 4;
-        let multilayer_percpetron = MultiLayerPerceptron::new(n_mlp, device);
-        let multilayer_percpetron_normalization = LayerNormConfig::new(n_mlp).init(device);
+        let multilayer_percpetron = MultiLayerPerceptron::new(n_state, device);
+        let multilayer_percpetron_normalization = LayerNormConfig::new(n_state).init(device);
 
         Self {
             attention_layer,
@@ -235,7 +227,7 @@ impl<B: Backend> ResidualAttentionBlock<B> {
         let x = x.clone()
             + self.attention_layer.forward(
                 self.attention_layer_normalization.forward(x),
-                xa.clone(),
+                None,
                 mask.clone(),
             );
 
@@ -248,17 +240,16 @@ impl<B: Backend> ResidualAttentionBlock<B> {
                 + cross_attention_layer.forward(
                     cross_attention_layer_normalization.forward(x),
                     xa.clone(),
-                    mask.clone(),
+                    None,
                 )
         } else {
             x
         };
 
+
         // Apply last linear layer and return resulting tensor
-        x.clone()
-            + self
-                .multilayer_percpetron
-                .forward(self.multilayer_percpetron_normalization.forward(x))
+        let x = self.multilayer_percpetron.forward(x);
+        x.clone() + self.multilayer_percpetron.forward(x)
     }
 }
 
@@ -322,6 +313,7 @@ impl<B: Backend> AudioEncoder<B> {
             .with_padding(PaddingConfig1d::Explicit(1))
             .init(device);
         let gelu2 = Gelu::new();
+    
 
         let positional_embedding =
             sinusoids_positional_embedding(n_audio_ctx, n_audio_state, device);
@@ -345,18 +337,19 @@ impl<B: Backend> AudioEncoder<B> {
 
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
         let x = self.gelu1.forward(self.conv1.forward(x));
-        let x = self.gelu2.forward(self.conv1.forward(x));
+        let x = self.gelu2.forward(self.conv2.forward(x));
         let x = x.permute([0, 2, 1]);
 
-        if x.dims()[1..] == self.positional_embedding.dims() {
-            panic!("Incorrect audio shape");
-        }
+        //if x.dims()[1..] == self.positional_embedding.dims() {
+        //    panic!("Incorrect audio shape");
+        //}
 
         let k = x.dims()[1];
+
         let x = x + self
             .positional_embedding
             .clone()
-            .slice([0..k])
+            .slice( 0..k)
             .unsqueeze::<3>();
 
         let mut x = x;
@@ -371,7 +364,7 @@ impl<B: Backend> AudioEncoder<B> {
 #[derive(Module, Debug)]
 pub struct TextDecoder<B: Backend> {
     pub token_embedding: Embedding<B>,
-    pub positional_encoding: Param<Tensor<B, 2>>,
+    pub positional_emebedding: Param<Tensor<B, 2>>,
     pub blocks: Vec<ResidualAttentionBlock<B>>,
     pub layer_normalization_post: LayerNorm<B>,
     pub mask: Tensor<B, 2>,
@@ -389,7 +382,7 @@ impl<B: Backend> TextDecoder<B> {
         let embedding_config = EmbeddingConfig::new(n_vocab, n_text_state);
         let token_embedding = embedding_config.init(device);
 
-        let positional_encoding = Param::from_tensor(Tensor::<B, 2>::random(
+        let positional_emebedding = Param::from_tensor(Tensor::<B, 2>::random(
             [n_text_ctx, n_text_state],
             Distribution::Default,
             device,
@@ -405,7 +398,7 @@ impl<B: Backend> TextDecoder<B> {
 
         Self {
             token_embedding,
-            positional_encoding,
+            positional_emebedding,
             blocks,
             layer_normalization_post,
             mask,
@@ -426,7 +419,7 @@ impl<B: Backend> TextDecoder<B> {
         // Why turn into int..
         let x = self.token_embedding.forward(x)
             + self
-                .positional_encoding
+                .positional_emebedding
                 .val()
                 .slice([0..seq_len])
                 .unsqueeze::<3>();
@@ -486,7 +479,8 @@ impl<B: Backend> Whisper<B> {
         self.encoder.forward(mel)
     }
 
-    pub fn forward_decoder(
+ 
+   pub fn forward_decoder(
         &self,
         tokens: Tensor<B, 2, Int>,
         encoder_output: Tensor<B, 3>,
