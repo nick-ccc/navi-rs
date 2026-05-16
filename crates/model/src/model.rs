@@ -9,7 +9,7 @@ use burn::{
     },
     tensor::{Distribution, Int, Tensor, activation::softmax, backend::Backend},
 };
-
+ 
 #[derive(Debug, Clone)]
 pub struct ModelDimensions {
     pub n_mels: usize,

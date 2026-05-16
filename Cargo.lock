@@ -3856,10 +3856,13 @@ checksum = "4a0b3262dc837d2513fe2ef31ff8461352ef932dcca31ba0c0abe33547cf6b9b"
 name = "model"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "burn",
  "burn-ndarray",
  "burn-store",
  "burn-wgpu",
+ "serde",
+ "serde_json",
  "tokenizers",
 ]
 
@@ -3919,6 +3922,15 @@ dependencies = [
  "spirv",
  "thiserror 2.0.18",
  "unicode-ident",
+]
+
+[[package]]
+name = "navi"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "audio",
+ "model",
 ]
 
 [[package]]
