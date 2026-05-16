@@ -11,11 +11,11 @@
 
 
 <p align="center">
-  <a href="(https://github.com/nick-ccc/rust-nix-template/actions/workflows/rust.yaml">
-    <img src="https://github.com/nick-ccc/rust-nix-template/actions/workflows/rust.yaml/badge.svg" alt="website"/>
+  <a href="(https://github.com/nick-ccc/navi-rs/actions/workflows/rust.yaml">
+    <img src="https://github.com/nick-ccc/navi-rs/actions/workflows/rust.yaml/badge.svg" alt="website"/>
   </a>
-  <a href="https://codecov.io/gh/nick-ccc/rust-nix-template">
-    <img src="https://codecov.io/gh/nick-ccc/rust-nix-template/branch/main/graph/badge.svg" alt="website"/>
+  <a href="https://codecov.io/gh/nick-ccc/navi-rs">
+    <img src="https://codecov.io/gh/nick-ccc/navi-rs/branch/main/graph/badge.svg" alt="website"/>
   </a>
   
 </p>
