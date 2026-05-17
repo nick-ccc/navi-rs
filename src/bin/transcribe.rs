@@ -3,8 +3,7 @@ use std::env;
 
 use audio::input::{load_audio, log_mel_spectrogram};
 use model::load::load_model;
-use model::tokenizer::{get_encoding};
-
+use model::tokenizer::get_encoding;
 
 // Todo could upgrade to clap CLI - perhaps for server deployment?
 fn main() -> anyhow::Result<()> {
@@ -14,16 +13,14 @@ fn main() -> anyhow::Result<()> {
     if args.len() >= 5 {
         debug = true;
         println!("Debug enabled!");
-    }
-    else if args.len() < 4 {
+    } else if args.len() < 4 {
         panic!(
             "Need to supply model configuration (.config), model tensor weights (.safetensor), and lastly audio file input (.wav)"
         );
-    } 
+    }
 
     let model = load_model(&args[1], &args[2], None)?;
 
-   
     // load audio input
     let audio = load_audio(&args[3], None)?;
     let log_mel_spectrogram_input = log_mel_spectrogram(audio, None, None, None)?;
@@ -34,7 +31,6 @@ fn main() -> anyhow::Result<()> {
 
     println!("Getting Tokenzier");
     let tokenizer = get_encoding(None, None)?;
-  
 
     // encode_with_special_tokens returns a Vec of tokens, so we grab the first one [0]
     let end_of_text_id = tokenizer.encode_with_special_tokens("<|endoftext|>")[0];
@@ -54,7 +50,6 @@ fn main() -> anyhow::Result<()> {
         // Pass the audio features and your growing token list to the decoder
         // TODO: really shouldn't clone here need to fix params to better accept by ref not value
         let next_token = model.forward_decoder_from_token_vector(&tokens, result.clone());
-        
 
         // Stop if Whisper says it's done
         if next_token == end_of_text_id {
@@ -65,19 +60,16 @@ fn main() -> anyhow::Result<()> {
 
         if debug {
             let text_tokens: Vec<u32> = tokens
-                    .clone()
-                    .into_iter()
-                    .filter(|&t| t < end_of_text_id) 
-                    .collect();  
+                .clone()
+                .into_iter()
+                .filter(|&t| t < end_of_text_id)
+                .collect();
             let decoded_text = tokenizer.decode(&text_tokens)?;
             println!("DEBUG: {}", decoded_text);
         }
     }
 
-    let text_tokens: Vec<u32> = tokens
-        .into_iter()
-        .filter(|&t| t < end_of_text_id) 
-        .collect();
+    let text_tokens: Vec<u32> = tokens.into_iter().filter(|&t| t < end_of_text_id).collect();
 
     let decoded_text = tokenizer.decode(&text_tokens)?;
     println!("Result: {}", decoded_text);

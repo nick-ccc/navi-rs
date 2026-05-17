@@ -492,9 +492,9 @@ impl<B: Backend> Whisper<B> {
     ) -> u32 {
         let seq_len = tokens.len();
         let device = encoder_output.device();
-        
+
         let token_ints: Vec<i32> = tokens.iter().map(|&t| t as i32).collect();
-        let tokens = Tensor::<B,1,Int>::from_data(token_ints.as_slice(), &device);
+        let tokens = Tensor::<B, 1, Int>::from_data(token_ints.as_slice(), &device);
         let tokens = tokens.reshape([1, seq_len]);
 
         let logits = self.decoder.forward(tokens, encoder_output);
@@ -505,7 +505,7 @@ impl<B: Backend> Whisper<B> {
             .into_data()
             .to_vec::<i32>()
             .expect("Failed to read argmax tensor")[0] as u32;
-       
+
         next_token_id
     }
 }
