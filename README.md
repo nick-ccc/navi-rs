@@ -21,6 +21,13 @@
 </p>
 
 
+# Purpose:
+This is purely for learning and deciphering the architecture of the Whsiper model from OpenAI and is by no means an 
+original creation. 
+
+# Status
+The model is capable of only producing the token corresponding to, manslaughter (for current test input file).
+
 # Refences
 
 > [!NOTE]

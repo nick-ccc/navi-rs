@@ -1,4 +1,5 @@
 use core::{f32, panic};
+use std::{usize, vec};
 
 use burn::{
     module::{Module, Param},
@@ -7,7 +8,7 @@ use burn::{
         PaddingConfig1d,
         conv::{Conv1d, Conv1dConfig},
     },
-    tensor::{Distribution, Int, Tensor, activation::softmax, backend::Backend},
+    tensor::{Distribution, Int, Tensor, activation::softmax, backend::Backend, s},
 };
 
 #[derive(Debug, Clone)]
@@ -482,5 +483,29 @@ impl<B: Backend> Whisper<B> {
         encoder_output: Tensor<B, 3>,
     ) -> Tensor<B, 3> {
         self.decoder.forward(tokens, encoder_output)
+    }
+
+    pub fn forward_decoder_from_token_vector(
+        &self,
+        tokens: &Vec<u32>,
+        encoder_output: Tensor<B, 3>,
+    ) -> u32 {
+        let seq_len = tokens.len();
+        let device = encoder_output.device();
+        
+        let token_ints: Vec<i32> = tokens.iter().map(|&t| t as i32).collect();
+        let tokens = Tensor::<B,1,Int>::from_data(token_ints.as_slice(), &device);
+        let tokens = tokens.reshape([1, seq_len]);
+
+        let logits = self.decoder.forward(tokens, encoder_output);
+        let last_token_logits = logits.slice(s![0..1, -1..]);
+        let argmax_tensor = last_token_logits.argmax(2);
+
+        let next_token_id = argmax_tensor
+            .into_data()
+            .to_vec::<i32>()
+            .expect("Failed to read argmax tensor")[0] as u32;
+       
+        next_token_id
     }
 }
