@@ -29,7 +29,7 @@ fn sinusoids_positional_embedding<B: Backend>(
     n_audio_state: usize,
     device: &B::Device,
 ) -> Tensor<B, 2> {
-    if n_audio_state % 2 != 0 {
+    if !n_audio_state.is_multiple_of(2) {
         panic!("audio state length must be divisible by two")
     }
 

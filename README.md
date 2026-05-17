@@ -20,3 +20,13 @@
   
 </p>
 
+
+# Refences
+
+> [!NOTE]
+> Much of this projects works on the ML Speech to Text is reimplementation from the below project
+
+- Original Whipser Paper: https://github.com/openai/whisper/tree/main
+- Implementation from other rust burn project: https://github.com/Gadersd/whisper-burn/tree/main
+    - Particular parts have been forked, mainly the audio logic for MEL spectogram and parts of the model, 
+        with some updates to reflect later burn versions (0.20)

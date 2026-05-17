@@ -58,16 +58,16 @@ fn load_whisper_dimensions<P: AsRef<Path>>(path: P) -> Result<ModelDimensions> {
 pub fn load_model(
     model_config_path: &str,
     safte_tensor_path: &str,
-    device: Option<<Wgpu as Backend>::Device>,
+    device: Option<<B as Backend>::Device>,
 ) -> Result<Whisper<B>> {
-    let resolved_device = device.unwrap_or_else(|| <Wgpu as Backend>::Device::default());
+    let resolved_device = device.unwrap_or_else(|| <B as Backend>::Device::default());
 
     // Load model dimensions here
-    print!("Loading model dimensions\n");
+    println!("Loading model dimensions");
     let dims = load_whisper_dimensions(model_config_path)?;
     let model = Whisper::<B>::new(&dims, &resolved_device);
 
-    print!("Loading safetensors\n");
+    println!("Loading safetensors");
     let mut store = burn_store::SafetensorsStore::from_file(safte_tensor_path).overwrite(true);
     model.save_into(&mut store)?;
 
